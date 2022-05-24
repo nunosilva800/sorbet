@@ -258,6 +258,13 @@ void SerializerImpl::pickle(Pickler &p, shared_ptr<const FileHash> fh) {
     for (const auto &e : fh->usages.sends) {
         p.putU4(e._hashValue);
     }
+    p.putU4(fh->foundMethodHashes.size());
+    for (const auto &fdh : fh->foundMethodHashes) {
+        p.putU4(fdh.ownerIdx);
+        p.putU4(fdh.nameHash._hashValue);
+        p.putU4(fdh.arityHash);
+        p.putU1(fdh.isSelfMethod);
+    }
 }
 
 unique_ptr<const FileHash> SerializerImpl::unpickleFileHash(UnPickler &p) {
@@ -295,6 +302,16 @@ unique_ptr<const FileHash> SerializerImpl::unpickleFileHash(UnPickler &p) {
         ShortNameHash key;
         key._hashValue = p.getU4();
         ret.usages.sends.emplace_back(key);
+    }
+    auto foundMethodHashesSize = p.getU4();
+    ret.foundMethodHashes.reserve(foundMethodHashesSize);
+    for (int it = 0; it < foundMethodHashesSize; it++) {
+        auto ownerIdx = p.getU4();
+        FullNameHash fullNameHash;
+        fullNameHash._hashValue = p.getU4();
+        auto arityHash = p.getU4();
+        auto isSelfMethod = p.getU1();
+        ret.foundMethodHashes.emplace_back(ownerIdx, fullNameHash, arityHash, isSelfMethod);
     }
     return make_unique<const FileHash>(move(ret));
 }

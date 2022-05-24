@@ -12,6 +12,7 @@
 #include "common/concurrency/WorkerPool.h"
 #include "common/sort.h"
 #include "core/Context.h"
+#include "core/FileHash.h"
 #include "core/FoundDefinitions.h"
 #include "core/Names.h"
 #include "core/Symbols.h"
@@ -30,19 +31,19 @@ struct SymbolFinderResult {
     unique_ptr<core::FoundDefinitions> names;
 };
 
-core::ClassOrModuleRef methodOwner(core::Context ctx, const ast::MethodDef::Flags &flags) {
-    ENFORCE(ctx.owner.exists() && ctx.owner != core::Symbols::todo());
-    auto owner = ctx.owner.enclosingClass(ctx);
-    if (owner == core::Symbols::root()) {
+core::ClassOrModuleRef methodOwner(core::Context ctx, core::SymbolRef owner, bool isSelfMethod) {
+    ENFORCE(owner.exists() && owner != core::Symbols::todo());
+    auto enclosingClass = owner.enclosingClass(ctx);
+    if (enclosingClass == core::Symbols::root()) {
         // Root methods end up going on object
-        owner = core::Symbols::Object();
+        enclosingClass = core::Symbols::Object();
     }
 
-    if (flags.isSelfMethod) {
-        owner = owner.data(ctx)->lookupSingletonClass(ctx);
+    if (isSelfMethod) {
+        enclosingClass = enclosingClass.data(ctx)->lookupSingletonClass(ctx);
     }
-    ENFORCE(owner.exists());
-    return owner;
+    ENFORCE(enclosingClass.exists());
+    return enclosingClass;
 }
 
 // Returns the SymbolRef corresponding to the class `self.class`, unless the
@@ -732,7 +733,7 @@ class SymbolDefiner {
     }
 
     core::MethodRef defineMethod(core::MutableContext ctx, const core::FoundMethod &method) {
-        auto owner = methodOwner(ctx, method.flags);
+        auto owner = methodOwner(ctx, ctx.owner, method.flags.isSelfMethod);
 
         // There are three symbols in play here, because there's:
         //
@@ -1160,6 +1161,14 @@ public:
             }
         }
     }
+
+    void populateFoundMethodHashes(core::Context ctx, core::FoundMethodHashes &foundMethodHashesOut) {
+        for (const auto &method : foundDefs.methods()) {
+            auto owner = method.owner;
+            auto fullNameHash = core::FullNameHash(ctx, method.name);
+            foundMethodHashesOut.emplace_back(owner.idx(), fullNameHash, method.argsHash, method.flags.isSelfMethod);
+        }
+    }
 };
 
 /**
@@ -1448,7 +1457,7 @@ public:
     ast::ExpressionPtr preTransformMethodDef(core::Context ctx, ast::ExpressionPtr tree) {
         auto &method = ast::cast_tree_nonnull<ast::MethodDef>(tree);
 
-        auto owner = methodOwner(ctx, method.flags);
+        auto owner = methodOwner(ctx, ctx.owner, method.flags.isSelfMethod);
         auto parsedArgs = ast::ArgParsing::parseArgs(method.args);
         auto sym = ctx.state.lookupMethodSymbolWithHash(owner, method.name, ast::ArgParsing::hashArgs(ctx, parsedArgs));
         if (!sym.exists()) {
@@ -1780,7 +1789,7 @@ vector<SymbolFinderResult> findSymbols(const core::GlobalState &gs, vector<ast::
 }
 
 ast::ParsedFilesOrCancelled defineSymbols(core::GlobalState &gs, vector<SymbolFinderResult> allFoundDefinitions,
-                                          WorkerPool &workers) {
+                                          WorkerPool &workers, core::FoundMethodHashes *foundMethodHashesOut) {
     Timer timeit(gs.tracer(), "naming.defineSymbols");
     vector<ast::ParsedFile> output;
     output.reserve(allFoundDefinitions.size());
@@ -1801,6 +1810,9 @@ ast::ParsedFilesOrCancelled defineSymbols(core::GlobalState &gs, vector<SymbolFi
         SymbolDefiner symbolDefiner(move(fileFoundDefinitions.names));
         output.emplace_back(move(fileFoundDefinitions.tree));
         symbolDefiner.run(ctx);
+        if (foundMethodHashesOut != nullptr) {
+            symbolDefiner.populateFoundMethodHashes(ctx, *foundMethodHashesOut);
+        }
     }
     prodCounterAdd("types.input.foundmethods.total", foundMethods);
     return output;
@@ -1867,7 +1879,8 @@ ast::ParsedFilesOrCancelled Namer::symbolizeTreesBestEffort(const core::GlobalSt
     return symbolizeTrees(gs, move(trees), workers, bestEffort);
 }
 
-ast::ParsedFilesOrCancelled Namer::run(core::GlobalState &gs, vector<ast::ParsedFile> trees, WorkerPool &workers) {
+ast::ParsedFilesOrCancelled Namer::run(core::GlobalState &gs, vector<ast::ParsedFile> trees, WorkerPool &workers,
+                                       core::FoundMethodHashes *foundMethodHashesOut) {
     auto foundDefs = findSymbols(gs, move(trees), workers);
     if (gs.epochManager->wasTypecheckingCanceled()) {
         trees.reserve(foundDefs.size());
@@ -1876,7 +1889,11 @@ ast::ParsedFilesOrCancelled Namer::run(core::GlobalState &gs, vector<ast::Parsed
         }
         return ast::ParsedFilesOrCancelled::cancel(move(trees), workers);
     }
-    auto result = defineSymbols(gs, move(foundDefs), workers);
+    if (foundMethodHashesOut != nullptr) {
+        ENFORCE(foundDefs.size() == 1,
+                "Producing foundMethodHashes is meant to only happen when hashing a single file");
+    }
+    auto result = defineSymbols(gs, move(foundDefs), workers, foundMethodHashesOut);
     if (!result.hasResult()) {
         return result;
     }

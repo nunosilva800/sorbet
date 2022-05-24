@@ -63,7 +63,9 @@ string FoundMethodHash::toString() const {
                        nameHash._hashValue, arityHash, isSelfMethod);
 }
 
-FileHash::FileHash(LocalSymbolTableHashes &&localSymbolTableHashes, UsageHash &&usages)
-    : localSymbolTableHashes(move(localSymbolTableHashes)), usages(move(usages)) {}
+FileHash::FileHash(LocalSymbolTableHashes &&localSymbolTableHashes, UsageHash &&usages,
+                   FoundMethodHashes &&foundMethodHashes)
+    : localSymbolTableHashes(move(localSymbolTableHashes)), usages(move(usages)),
+      foundMethodHashes(move(foundMethodHashes)) {}
 
 } // namespace sorbet::core
