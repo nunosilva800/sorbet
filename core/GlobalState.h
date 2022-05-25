@@ -166,6 +166,7 @@ public:
     packages::UnfreezePackages unfreezePackages();
 
     void mangleRenameSymbol(SymbolRef what, NameRef origName);
+    void deleteMethodSymbol(MethodRef what);
     spdlog::logger &tracer() const;
     unsigned int namesUsedTotal() const;
     unsigned int utf8NamesUsed() const;

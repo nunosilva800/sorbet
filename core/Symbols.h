@@ -44,8 +44,10 @@ public:
     friend class serialize::SerializerImpl;
 
     Method(const Method &) = delete;
+    Method &operator=(Method &) = delete;
     Method() = default;
     Method(Method &&) noexcept = default;
+    Method &operator=(Method &&) noexcept = default;
     class Flags {
     public:
         // Synthesized by C++ code in a Rewriter pass
@@ -82,6 +84,7 @@ public:
     Loc loc() const;
     const InlinedVector<Loc, 2> &locs() const;
     void addLoc(const core::GlobalState &gs, core::Loc loc);
+    void removeLocsForFile(core::FileRef file);
     uint32_t hash(const GlobalState &gs) const;
     uint32_t methodShapeHash(const GlobalState &gs) const;
     uint32_t methodArgumentHash(const GlobalState &gs) const;
