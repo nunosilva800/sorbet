@@ -47,6 +47,9 @@ public:
     Method &operator=(Method &) = delete;
     Method() = default;
     Method(Method &&) noexcept = default;
+    // TODO(jez) Pretty sure we only want GlobalState to be able to call this.
+    // Maybe we make this method private, but give a fancy name to it so you can't accidentally do
+    // it with just a simple `=` sign?
     Method &operator=(Method &&) noexcept = default;
     class Flags {
     public:

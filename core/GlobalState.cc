@@ -1663,6 +1663,25 @@ void GlobalState::mangleRenameSymbol(SymbolRef what, NameRef origName) {
 void GlobalState::deleteMethodSymbol(MethodRef what) {
     const auto &whatData = what.data(*this);
     auto owner = whatData->owner;
+
+    // TODO(jez) In the future, we probably want to move alias methods into namer. Doing this will
+    // naturally enter them into the list of found methods, and then naturally remove them in
+    // Namer::runIncremental.
+    // We're lucky right now that we don't allow creating method aliases via ancestor information,
+    // as it means we only have to look on this method to delete all the relevant method aliases.
+    vector<core::SymbolRef> erased;
+    absl::erase_if(owner.data(*this)->members(), [&erased, what, this](const auto &item) {
+        auto &[name, member] = item;
+        auto shouldErase = member.isMethod() && member != what && member.dealias(*this) == what;
+        if (shouldErase) {
+            erased.emplace_back(member);
+        }
+        return shouldErase;
+    });
+    for (const auto sym : erased) {
+        this->methods[sym.asMethodRef().id()] = this->methods[0].deepCopy(*this);
+    }
+
     auto &ownerMembers = owner.data(*this)->members();
     auto fnd = ownerMembers.find(whatData->name);
     ENFORCE(fnd != ownerMembers.end());
