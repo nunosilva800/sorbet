@@ -1,0 +1,11 @@
+# typed: true
+# TODO explain this spacer line
+
+class A
+  alias_method :from1, :to1
+end
+
+A.new.to # error: Method `to` does not exist on `A`
+A.new.to1
+A.new.from # error: Method `from` does not exist on `A`
+A.new.from1

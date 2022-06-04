@@ -1,0 +1,12 @@
+# typed: true
+# TODO explain this spacer line
+# assert-fast-path: alias_redefined_multi_file__1.rb,alias_redefined_multi_file__2.rb
+
+class A
+  def to1; end
+end
+
+A.new.to # error: Method `to` does not exist on `A`
+A.new.to1
+A.new.from
+A.new.from1 # error: Method `from1` does not exist on `A`
